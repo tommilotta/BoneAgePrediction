@@ -1,14 +1,6 @@
-import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, Input
-from tensorflow.keras.layers import Add, Dense, Activation, ZeroPadding2D, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, GlobalMaxPooling2D, Dropout
-from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-import pydot
-from PIL import Image
-from IPython.display import SVG
+from tensorflow.keras.layers import Input, Dense, Activation, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, Dropout
 from tensorflow.keras.initializers import glorot_uniform
-from tensorflow.keras.utils import plot_model
 
 
 ### CONVOLUTIONAL AND BATCHNORM HELPER FUNCTION ###
@@ -376,7 +368,7 @@ def Inceptionv4(X_input, include_top=True):
     classes -- integer, number of classes
 
     Returns:
-    model -- a Model() instance in Keras
+    X -- a Model() instance in Keras
     """
 
     # X_input = Input(input_shape)
@@ -431,62 +423,40 @@ def Inceptionv4(X_input, include_top=True):
     # return model
 
 
-# def Inceptionv4(input_shape):
-#     """
-#     Implementation of the Inception-v4 architecture
+def Bone_Age_incV4(img_shape): 
+    """
+    Implementation of the Inception-v4 architecture
 
-#     Arguments:
-#     input_shape -- shape of the images of the dataset
-#     classes -- integer, number of classes
+    Arguments:
+    img_shape -- shape of the images of the dataset
 
-#     Returns:
-#     model -- a Model() instance in Keras
-#     """
+    Returns:
+    Model() instance in Keras
+    """
 
-#     X_input = Input(input_shape)
+    X_input = Input(shape=img_shape)
+    gen_input = Input(shape=(1,))
+    
+    # Inception block (image data)
+    X = Inceptionv4(X_input, include_top=False) # 14 x 14 x 1536
+    # to use it as a model check Github
 
-#     # Stem block
-#     X = stem_block(X_input)
+    X = AveragePooling2D((2, 2))(X) # 7 x 7 x 1536 (or 2048 for v3)
+    X = Flatten()(X)
 
-#     # Four Inception A blocks
-#     X = inception_a_block(X, 'a1')
-#     X = inception_a_block(X, 'a2')
-#     X = inception_a_block(X, 'a3')
-#     X = inception_a_block(X, 'a4')
+    # Dense block (gender)
+    gen = Dense(32, activation='relu')(gen_input)
 
-#     # Reduction A block
-#     X = reduction_a_block(X)
+    # Concatenation of image and gender data
+    X = tf.concat(values=[X, gen], axis=1)
 
-#     # Seven Inception B blocks
-#     X = inception_b_block(X, 'b1')
-#     X = inception_b_block(X, 'b2')
-#     X = inception_b_block(X, 'b3')
-#     X = inception_b_block(X, 'b4')
-#     X = inception_b_block(X, 'b5')
-#     X = inception_b_block(X, 'b6')
-#     X = inception_b_block(X, 'b7')
+    # First Dense block
+    X = Dense(1000, activation='relu')(X)
 
-#     # Reduction B block
-#     X = reduction_b_block(X)
+    # Second Dense block
+    X = Dense(1000, activation='relu')(X)
 
-#     # Three Inception C blocks
-#     X = inception_c_block(X, 'c1')
-#     X = inception_c_block(X, 'c2')
-#     X = inception_c_block(X, 'c3')
+    # Fully connected layer
+    X = Dense(1)(X)
 
-#     # AvgPool
-#     kernel_pooling = X.get_shape()[1:3]
-#     X = AveragePooling2D(kernel_pooling, name='avg_pool')(X) # maybe we should cut before this and do a flatten (14*14*1536)
-#     X = Flatten(name='fl_1')(X)
-
-#     # Dropout
-#     X = Dropout(rate = 0.2)(X)
-
-#     # Output layer
-#     X = Dense(1, activation='sigmoid', name='fc')(X)
-
-#     # Create model
-#     model = Model(inputs = X_input, outputs = X, name='Inceptionv4')
-
-#     return model
-
+    return tf.keras.Model(inputs=[X_input, gen_input], outputs=X, name='Bone_Age_incV4')

@@ -368,7 +368,7 @@ def Inceptionv4(X_input, include_top=True):
     classes -- integer, number of classes
 
     Returns:
-    X -- a Model() instance in Keras
+    X -- output of the Inception-v4 block
     """
 
     # X_input = Input(input_shape)
@@ -423,9 +423,9 @@ def Inceptionv4(X_input, include_top=True):
     # return model
 
 
-def Bone_Age_incV4(img_shape): 
+def Bone_Age_incV4(img_shape, with_gender=True): 
     """
-    Implementation of the Inception-v4 architecture
+    Implementation of an Inception-v4-based architecture for bone age prediction 
 
     Arguments:
     img_shape -- shape of the images of the dataset
@@ -444,11 +444,12 @@ def Bone_Age_incV4(img_shape):
     X = AveragePooling2D((2, 2))(X) # 7 x 7 x 1536 (or 2048 for v3)
     X = Flatten()(X)
 
-    # Dense block (gender)
-    gen = Dense(32, activation='relu')(gen_input)
+    if with_gender:
+        # Dense block (gender)
+        gen = Dense(32, activation='relu')(gen_input)
 
-    # Concatenation of image and gender data
-    X = tf.concat(values=[X, gen], axis=1)
+        # Concatenation of image and gender data
+        X = tf.concat(values=[X, gen], axis=1)
 
     # First Dense block
     X = Dense(1000, activation='relu')(X)

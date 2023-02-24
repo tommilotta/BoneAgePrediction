@@ -1,7 +1,8 @@
 import tensorflow as tf
-from keras.layers import Dense, Activation, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, Dropout
+from keras.layers import Input, Dense, Activation, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, Dropout, ReLU
 from keras.initializers import glorot_uniform
-
+from tensorflow.keras import backend
+from tensorflow.keras.layers import Lambda
 
 ### CONVOLUTIONAL AND BATCHNORM HELPER FUNCTION ###
 def conv2d_bn(X_input, filters, kernel_size, strides, padding='same', activation=None,
@@ -29,7 +30,7 @@ def conv2d_bn(X_input, filters, kernel_size, strides, padding='same', activation
                padding = padding, name = conv_name_base + name, 
                kernel_initializer = glorot_uniform(seed=0))(X_input)
     X = BatchNormalization(axis = 3, name = bn_name_base + name)(X)
-    if activation is not None:
+    if activation:
         X = Activation(activation)(X)
     return X
 
@@ -37,7 +38,7 @@ def conv2d_bn(X_input, filters, kernel_size, strides, padding='same', activation
 ### STEM BLOCK ###
 def stem_block(X_input):
     """
-    Implementation of the stem block as defined above
+    Implementation f the stem block as defined above
     
     Arguments:
     X_input -- input tensor of shape (m, n_H_prev, n_W_prev, n_C_prev)
@@ -108,9 +109,8 @@ def stem_block(X_input):
     
     return X
 
-
 ### INCEPTION-A BLOCK ###
-def inception_a_block(X_input, base_name):
+def incres_a_block(X_input, base_name):
     """
     Implementation of the Inception-A block
     
@@ -120,46 +120,46 @@ def inception_a_block(X_input, base_name):
     Returns:
     X -- output of the block, tensor of shape (n_H, n_W, n_C)
     """
-
-    # Branch 1
-    branch1 = AveragePooling2D(pool_size = (3, 3), strides = (1, 1), 
-                           padding = 'same', name = base_name + 'ia_branch_1_1')(X_input)
-    branch1 = conv2d_bn(branch1, filters = 96, kernel_size = (1, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ia_branch_1_2')
     
     # Branch 2
-    branch2 = conv2d_bn(X_input, filters = 96, kernel_size = (1, 1), 
+    branch2 = conv2d_bn(X_input, filters = 32, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ia_branch_2_1')
     
     # Branch 3
-    branch3 = conv2d_bn(X_input, filters = 64, kernel_size = (1, 1), 
+    branch3 = conv2d_bn(X_input, filters = 32, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ia_branch_3_1')
-    branch3 = conv2d_bn(branch3, filters = 96, kernel_size = (3, 3), 
+    branch3 = conv2d_bn(branch3, filters = 32, kernel_size = (3, 3), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ia_branch_3_2')
 
     # Branch 4
-    branch4 = conv2d_bn(X_input, filters = 64, kernel_size = (1, 1), 
+    branch4 = conv2d_bn(X_input, filters = 32, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ia_branch_4_1')
-    branch4 = conv2d_bn(branch4, filters = 96, kernel_size = (3, 3), 
+    branch4 = conv2d_bn(branch4, filters = 32, kernel_size = (3, 3), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ia_branch_4_2')
-    branch4 = conv2d_bn(branch4, filters = 96, kernel_size = (3, 3), 
+    branch4 = conv2d_bn(branch4, filters = 32, kernel_size = (3, 3), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ia_branch_4_3')
 
     # Concatenate branch1, branch2, branch3 and branch4 along the channel axis
-    X = tf.concat(values=[branch1, branch2, branch3, branch4], axis=3)
+    X = tf.concat(values=[branch2, branch3, branch4], axis=3)
+
+    # X = conv2d_bn(X, filters = 256, kernel_size = (1, 1), strides = (1, 1), 
+    #               padding='same', activation='relu', name = base_name + 'ia_branch_4_4')
+    X = conv2d_bn(X, filters = 384, kernel_size = (1, 1), strides = (1, 1), 
+                  padding='same', activation='relu', name = base_name + 'ia_branch_4_4')
+    
+    X = tf.keras.layers.add([X, X_input])
     
     return X
 
 
 ### INCEPTION-B ###
-def inception_b_block(X_input, base_name):
+def incres_b_block(X_input, base_name):
     """
     Implementation of the Inception-B block
     
@@ -169,55 +169,38 @@ def inception_b_block(X_input, base_name):
     Returns:
     X -- output of the block, tensor of shape (n_H, n_W, n_C)
     """
-
-    # Branch 1
-    branch1 = AveragePooling2D(pool_size = (3, 3), strides = (1, 1), 
-                           padding = 'same', name = base_name + 'ib_branch_1_1')(X_input)
-    branch1 = conv2d_bn(branch1, filters = 128, kernel_size = (1, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ib_branch_1_2')
     
     # Branch 2
-    branch2 = conv2d_bn(X_input, filters = 384, kernel_size = (1, 1), 
+    branch2 = conv2d_bn(X_input, filters = 128, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ib_branch_2_1')
-    
-    # Branch 3
-    branch3 = conv2d_bn(X_input, filters = 192, kernel_size = (1, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ib_branch_3_1')
-    branch3 = conv2d_bn(branch3, filters = 224, kernel_size = (1, 7), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ib_branch_3_2')
-    branch3 = conv2d_bn(branch3, filters = 256, kernel_size = (7, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ib_branch_3_3')
 
     # Branch 4
-    branch4 = conv2d_bn(X_input, filters = 192, kernel_size = (1, 1), 
+    branch4 = conv2d_bn(X_input, filters = 128, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ib_branch_4_1')
-    branch4 = conv2d_bn(branch4, filters = 192, kernel_size = (1, 7), 
+    branch4 = conv2d_bn(branch4, filters = 128, kernel_size = (1, 7), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ib_branch_4_2')
-    branch4 = conv2d_bn(branch4, filters = 224, kernel_size = (7, 1), 
+    branch4 = conv2d_bn(branch4, filters = 128, kernel_size = (7, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ib_branch_4_3')
-    branch4 = conv2d_bn(branch4, filters = 224, kernel_size = (1, 7), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ib_branch_4_4')
-    branch4 = conv2d_bn(branch4, filters = 256, kernel_size = (7, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ib_branch_4_5')
 
     # Concatenate branch1, branch2, branch3 and branch4 along the channel axis
-    X = tf.concat(values=[branch1, branch2, branch3, branch4], axis=3)
+    X = tf.concat(values=[branch2, branch4], axis=3)
+
+    # X = conv2d_bn(X, filters = 896, kernel_size = (1, 1), strides = (1, 1), 
+    #               padding='same', activation='relu', name = base_name + 'ib_branch_4_6')
+    X = conv2d_bn(X, filters = 1152, kernel_size = (1, 1), strides = (1, 1), 
+                  padding='same', activation='relu', name = base_name + 'ib_branch_4_6')
+    
+    X = tf.keras.layers.add([X, X_input])
     
     return X
 
 
 ### INCEPTION-C ###
-def inception_c_block(X_input, base_name):
+def incres_c_block(X_input, base_name):
     """
     Implementation of the Inception-C block
     
@@ -227,50 +210,32 @@ def inception_c_block(X_input, base_name):
     Returns:
     X -- output of the block, tensor of shape (n_H, n_W, n_C)
     """
-
-    # Branch 1
-    branch1 = AveragePooling2D(pool_size = (3, 3), strides = (1, 1), 
-                           padding = 'same', name = base_name + 'ic_branch_1_1')(X_input)
-    branch1 = conv2d_bn(branch1, filters = 256, kernel_size = (1, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ic_branch_1_2')
     
     # Branch 2
-    branch2 = conv2d_bn(X_input, filters = 256, kernel_size = (1, 1), 
+    branch2 = conv2d_bn(X_input, filters = 192, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ic_branch_2_1')
-    
-    # Branch 3
-    branch3 = conv2d_bn(X_input, filters = 384, kernel_size = (1, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ic_branch_3_1')
-    branch3_1 = conv2d_bn(branch3, filters = 256, kernel_size = (1, 3), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ic_branch_3_2')
-    branch3_2 = conv2d_bn(branch3, filters = 256, kernel_size = (3, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ic_branch_3_3')
 
     # Branch 4
-    branch4 = conv2d_bn(X_input, filters = 384, kernel_size = (1, 1), 
+    branch4 = conv2d_bn(X_input, filters = 192, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ic_branch_4_1')
-    branch4 = conv2d_bn(branch4, filters = 448, kernel_size = (1, 3), 
+    branch4 = conv2d_bn(branch4, filters = 192, kernel_size = (1, 3), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ic_branch_4_2')
-    branch4 = conv2d_bn(branch4, filters = 512, kernel_size = (3, 1), 
+    branch4 = conv2d_bn(branch4, filters = 192, kernel_size = (3, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = base_name + 'ic_branch_4_3')
-    branch4_1 = conv2d_bn(branch4, filters = 256, kernel_size = (3, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ic_branch_4_4')
-    branch4_2 = conv2d_bn(branch4, filters = 256, kernel_size = (1, 3), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = base_name + 'ic_branch_4_5')
 
     # Concatenate branch1, branch2, branch3_1, branch3_2, branch4_1 and branch4_2 along the channel axis
-    X = tf.concat(values=[branch1, branch2, branch3_1, branch3_2, branch4_1, 
-                          branch4_2], axis=3, name='concat_' + base_name)
+    X = tf.concat(values=[branch2, branch4], axis=3, name='concat_' + base_name)
+    
+    # X = conv2d_bn(X, filters = 1792, kernel_size = (1, 1), strides = (1, 1), 
+    #               padding='same', activation='relu', name = base_name + 'ic_branch_4_6')
+    X = conv2d_bn(X, filters = 2048, kernel_size = (1, 1), strides = (1, 1), 
+                  padding='same', activation='relu', name = base_name + 'ic_branch_4_6')
+    
+    X = tf.keras.layers.add([X, X_input])
     
     return X
 
@@ -297,13 +262,13 @@ def reduction_a_block(X_input):
                         name = 'ra_branch_2_1')
     
     # Branch 3
-    branch3 = conv2d_bn(X_input, filters = 192, kernel_size = (1, 1), 
+    branch3 = conv2d_bn(X_input, filters = 256, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = 'ra_branch_3_1')
-    branch3 = conv2d_bn(branch3, filters = 224, kernel_size = (3, 3), 
+    branch3 = conv2d_bn(branch3, filters = 256, kernel_size = (3, 3), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = 'ra_branch_3_2')
-    branch3 = conv2d_bn(branch3, filters = 256, kernel_size = (3, 3), 
+    branch3 = conv2d_bn(branch3, filters = 384, kernel_size = (3, 3), 
                         strides = (2, 2), padding = 'valid', activation='relu', 
                         name = 'ra_branch_3_3')
 
@@ -330,74 +295,81 @@ def reduction_b_block(X_input):
                            padding = 'valid', name = 'rb_branch_1_1')(X_input)
     
     # Branch 2
-    branch2 = conv2d_bn(X_input, filters = 192, kernel_size = (1, 1), 
+    branch2 = conv2d_bn(X_input, filters = 256, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = 'rb_branch_2_1')
-    branch2 = conv2d_bn(branch2, filters = 192, kernel_size = (3, 3), 
+    branch2 = conv2d_bn(branch2, filters = 384, kernel_size = (3, 3), 
                         strides = (2, 2), padding = 'valid', activation='relu', 
                         name = 'rb_branch_2_2')
+    
+    # Branch 2
+    branch4 = conv2d_bn(X_input, filters = 256, kernel_size = (1, 1), 
+                        strides = (1, 1), padding = 'same', activation='relu', 
+                        name = 'rb_branch_4_1')
+    branch4 = conv2d_bn(branch4, filters = 256, kernel_size = (3, 3), 
+                        strides = (2, 2), padding = 'valid', activation='relu', 
+                        name = 'rb_branch_4_2')
     
     # Branch 3
     branch3 = conv2d_bn(X_input, filters = 256, kernel_size = (1, 1), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = 'rb_branch_3_1')
-    branch3 = conv2d_bn(branch3, filters = 256, kernel_size = (1, 7), 
+    branch3 = conv2d_bn(branch3, filters = 256, kernel_size = (3, 3), 
                         strides = (1, 1), padding = 'same', activation='relu', 
                         name = 'rb_branch_3_2')
-    branch3 = conv2d_bn(branch3, filters = 320, kernel_size = (7, 1), 
-                        strides = (1, 1), padding = 'same', activation='relu', 
-                        name = 'rb_branch_3_3')
-    branch3 = conv2d_bn(branch3, filters = 320, kernel_size = (3, 3), 
+    branch3 = conv2d_bn(branch3, filters = 256, kernel_size = (3, 3), 
                         strides = (2, 2), padding = 'valid', activation='relu', 
                         name = 'rb_branch_3_4')
 
     # Concatenate branch1, branch2 and branch3 along the channel axis
-    X = tf.concat(values=[branch1, branch2, branch3], axis=3)
+    X = tf.concat(values=[branch1, branch2, branch3, branch4], axis=3)
     
     return X
 
 
-### INCEPTION V4 COMPOSITION ###
-def Inceptionv4(X_input, include_top=True):
+### InceptionResNetV2 COMPOSITION ###
+def InceptionResNetV2(X_input, include_top=True):
     """
-    Implementation of the Inception-v4 architecture
+    Implementation of the InceptionResNetV2 architecture
 
     Arguments:
-    X_input -- input tensor
-    include_top -- if True adds layers to get a classification
+    input_shape -- shape of the images of the dataset
+    classes -- integer, number of classes
 
     Returns:
-    X -- output of the Inception-v4 block
+    X -- output of the InceptionResNetV2 block
     """
+
+    # X_input = Input(input_shape)
 
     # Stem block
     X = stem_block(X_input)
 
     # Four Inception A blocks
-    X = inception_a_block(X, 'a1')
-    X = inception_a_block(X, 'a2')
-    X = inception_a_block(X, 'a3')
-    X = inception_a_block(X, 'a4')
+    X = incres_a_block(X, 'a1')
+    X = incres_a_block(X, 'a2')
+    X = incres_a_block(X, 'a3')
+    X = incres_a_block(X, 'a4')
 
     # Reduction A block
     X = reduction_a_block(X)
 
     # Seven Inception B blocks
-    X = inception_b_block(X, 'b1')
-    X = inception_b_block(X, 'b2')
-    X = inception_b_block(X, 'b3')
-    X = inception_b_block(X, 'b4')
-    X = inception_b_block(X, 'b5')
-    X = inception_b_block(X, 'b6')
-    X = inception_b_block(X, 'b7')
+    X = incres_b_block(X, 'b1')
+    X = incres_b_block(X, 'b2')
+    X = incres_b_block(X, 'b3')
+    X = incres_b_block(X, 'b4')
+    X = incres_b_block(X, 'b5')
+    X = incres_b_block(X, 'b6')
+    X = incres_b_block(X, 'b7')
 
     # Reduction B block
     X = reduction_b_block(X)
 
     # Three Inception C blocks
-    X = inception_c_block(X, 'c1')
-    X = inception_c_block(X, 'c2')
-    X = inception_c_block(X, 'c3')
+    X = incres_c_block(X, 'c1')
+    X = incres_c_block(X, 'c2')
+    X = incres_c_block(X, 'c3')
 
     # Final pooling and prediction 
     if include_top:
@@ -410,6 +382,6 @@ def Inceptionv4(X_input, include_top=True):
         X = Dropout(rate = 0.2)(X)
 
         # Output layer
-        X = Dense(1, activation='sigmoid', name='fc')(X)
+        X = Dense(1, activation='softmax', name='fc')(X)
     
     return X

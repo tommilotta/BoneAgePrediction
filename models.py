@@ -1,202 +1,72 @@
 import time
-import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Dense, Activation, BatchNormalization, Flatten, Conv2D, AveragePooling2D, MaxPooling2D, Dropout
-from tensorflow.keras.initializers import glorot_uniform
+import matplotlib as mpl
+from sklearn.metrics import r2_score
+from keras.layers import Input, Dense, Flatten, AveragePooling2D
 from keras.applications.inception_v3 import InceptionV3
+from keras.applications import InceptionResNetV2
 from keras.applications.vgg16 import VGG16
 
 from inc_v4 import *
 from utils import *
 
+# define constants
+IMG_SIZE = 224
+IMG_SHAPE = (IMG_SIZE, IMG_SIZE, 1)
+BATCH_SIZE = 32
+MODELS = ['incV3', 'incV4', 'vgg16', 'incRes', 'incV3 nogender', 'incV3 Male', 'incV3 Female']
+LOSS = 'mean_absolute_error'
+
+cmap = mpl.cm.get_cmap('viridis')
+COLORS = [cmap(x) for x in np.linspace(0, 1, num=len(MODELS), endpoint=False)]
+
 
 def create_model(model_name, img_shape, loss, optim, metric, with_gender=True):
+    """
+    Implementation of an architecture for bone age prediction with different backbone models
+    
+    Arguments:
+    model_name -- name of the chosen model
+    img_shape -- shape of the images of the dataset
+    loss -- loss with which to compile the model
+    optim -- optimizer with which to compile the model
+    metric -- metric with which to compile the model
+    with_gender -- if False, gender data is not used in the model
+    
+    Returns:
+    compiled model
+    """
+
+    X_input = Input(shape=img_shape)
+    gen_input = Input(shape=(1,))
+
+    # choose backbone
     if model_name == 'incV3':
-        model = Bone_Age_incV3(img_shape, with_gender)
-        model.compile(loss=loss, optimizer=optim, metrics=[metric])
-
+        # Inception block (image data)    
+        inc_model = InceptionV3(input_tensor=X_input, input_shape=img_shape, include_top=False, weights=None)
+        inc_model.trainable=True
+        X = inc_model.get_layer('mixed10').output
+        X = AveragePooling2D((2, 2))(X)
+        
     if model_name == 'incV4':
-        model = Bone_Age_incV4(img_shape, with_gender)
-        model.compile(loss=loss, optimizer=optim, metrics=[metric])
-
-    if model_name == 'simple_conv':
-        model = Simple_Conv(img_shape, with_gender)
-        model.compile(loss=loss, optimizer=optim, metrics=[metric])
+        # Inception block (image data)
+        X = Inceptionv4(X_input, include_top=False)
+        X = AveragePooling2D((2, 2))(X)
 
     if model_name == 'vgg16':
-        model = VGG16_boneage(img_shape, with_gender)
-        model.compile(loss=loss, optimizer=optim, metrics=[metric])
+        # VGG16 block (image data)
+        vgg16_model = VGG16(input_tensor=X_input, include_top=False, weights=None)
+        vgg16_model.trainable = True
+        X = vgg16_model.get_layer('block5_conv3').output
 
-    return model
-
-
-# def fit_boneage(model, train_gen, train_steps, val_gen, val_steps, epochs=1, callbacks=None, path='./', gender=True):
-def fit_boneage(model, train_gen, train_steps, val_gen, val_steps, epochs, callbacks, gender):
-    start_time = time.time()
-    model_history = model.fit(train_gen, steps_per_epoch=train_steps, validation_data=val_gen, 
-                              validation_steps=val_steps, epochs=epochs, callbacks=callbacks)
-    model_time = time.time() - start_time
-
-    # save model
-    # model.save(path + 'models/{}-gender={}-epochs={}.h5'.format(model.name, gender, epochs))
-    model.save('./{}-gender={}-epochs={}.h5'.format(str(model.name), str(gender), str(epochs)))
-
-    # plot and save learning curve
-    plot_loss(model_history)
-    # plt.savefig(path + 'plots/{}-gender={}-epochs={}_train_loss.png'.format(model.name, gender, epochs))
-    plt.savefig('./{}-gender={}-epochs={}_train_loss.png'.format(str(model.name), str(gender), str(epochs)))
-
-    print('TRAINING FINISHED')
-    print('Training time: {}'.format(model_time))
-    print('Loss: {}'.format(model_history.history['loss']))
-    print('MAE in months: {}'.format(model_history.history['mae_in_months']))
-    print('Parameters: {}'.format(model.count_params()))
-
-    return model_history, model_time
-
-
-##### FIRST PLACE SOLUTION (INCEPTIONV3) #####
-def Bone_Age_incV3(img_shape, with_gender=True):
-    """
-    Implementation of the first place solution with Inception-v3-based architecture
-
-    Arguments:
-    img_shape -- shape of the images of the dataset
-    with_gender -- if False, gender data is not used in the model
-
-    Returns:
-    Model() instance in Keras
-    """
-
-    X_input = Input(shape=img_shape)
-    gen_input = Input(shape=(1,))
-    
-    # Inception block (image data)    
-    inc_model = InceptionV3(input_tensor=X_input, input_shape=img_shape, include_top=False, weights=None)
-    inc_model.trainable=True
-    X = inc_model.get_layer('mixed10').output # 14 x 14 x 2048
-
-    X = AveragePooling2D((2, 2))(X) # 7 x 7 x 2048
+    if model_name == 'incRes':
+        # Inception block (image data)
+        incres = InceptionResNetV2(input_tensor=X_input, include_top=False, weights=None)
+        X = incres.layers[-1].get_output_at(0)
+        X = AveragePooling2D((2, 2))(X)
+        
+    # common structure
     X = Flatten()(X)
-
-    if with_gender:
-        # Dense block (gender)
-        gen = Dense(32, activation='relu')(gen_input)
-
-        # Concatenation of image and gender data
-        X = tf.concat(values=[X, gen], axis=1)
-
-    # First Dense block
-    X = Dense(1000, activation='relu')(X)
-
-    # Second Dense block
-    X = Dense(1000, activation='relu')(X)
-
-    # Fully connected layer
-    X = Dense(1)(X)
-
-    return tf.keras.Model(inputs=[X_input, gen_input], outputs=X, name='incV3_boneage')
-
-
-##### INCEPTIONV4 #####
-def Bone_Age_incV4(img_shape, with_gender=True): 
-    """
-    Implementation of an Inception-v4-based architecture for bone age prediction 
-
-    Arguments:
-    img_shape -- shape of the images of the dataset
-    with_gender -- if False, gender data is not used in the model
-
-    Returns:
-    Model() instance in Keras
-    """
-
-    X_input = Input(shape=img_shape)
-    gen_input = Input(shape=(1,))
-    
-    # Inception block (image data)
-    X = Inceptionv4(X_input, include_top=False) # 14 x 14 x 1536
-    # to use it as a model check Github
-
-    X = AveragePooling2D((2, 2))(X) # 7 x 7 x 1536 (or 2048 for v3)
-    X = Flatten()(X)
-
-    if with_gender:
-        # Dense block (gender)
-        gen = Dense(32, activation='relu')(gen_input)
-
-        # Concatenation of image and gender data
-        X = tf.concat(values=[X, gen], axis=1)
-
-    # First Dense block
-    X = Dense(1000, activation='relu')(X)
-
-    # Second Dense block
-    X = Dense(1000, activation='relu')(X)
-
-    # Fully connected layer
-    X = Dense(1)(X)
-
-    return tf.keras.Model(inputs=[X_input, gen_input], outputs=X, name='incV4_boneage')
-
-
-##### SIMPLE-CNN #####
-def conv2d_bn(X_input, filters, kernel_size, strides, padding='same', activation=None,
-              name=None):
-    """
-    Implementation of a conv block as defined above
-    
-    Arguments:
-    X_input -- input tensor of shape (m, n_H_prev, n_W_prev, n_C_prev)
-    filters -- integer, defining the number of filters in the CONV layer
-    kernel_size -- (f1, f2) tuple of integers, specifying the shape of the CONV kernel
-    s -- integer, specifying the stride to be used
-    padding -- padding approach to be used
-    name -- name for the layers
-    
-    Returns:
-    X -- output of the conv2d_bn block, tensor of shape (n_H, n_W, n_C)
-    """
-    
-    # defining name basis
-    conv_name_base = 'conv_'
-    bn_name_base = 'bn_'
-
-    X = Conv2D(filters = filters, kernel_size = kernel_size, strides = strides, 
-               padding = padding, name = conv_name_base + name, 
-               kernel_initializer = glorot_uniform(seed=0))(X_input)
-    X = BatchNormalization(axis = 3, name = bn_name_base + name)(X)
-    if activation is not None:
-        X = Activation(activation)(X)
-    return X
-
-def Simple_Conv(img_shape, with_gender=True):
-    """
-    Implementation of a simple multi-layer convolutional architecture
-
-    Arguments:
-    img_shape -- shape of the images of the dataset
-    with_gender -- if False, gender data is not used in the model
-
-    Returns:
-    Model() instance in Keras
-    """
-
-    X_input = Input(shape=img_shape)
-    gen_input = Input(shape=(1,))
-
-    # Convolutional block (image data)
-    X = Conv2D(32, (3,3), activation='relu')(X_input)
-    # X = conv2d_bn(X_input, 32, (3,3), 1, activation='relu', name='first')
-    X = MaxPooling2D((2, 2))(X)
-    X = Conv2D(64, (3,3), activation='relu')(X)
-    # X = conv2d_bn(X_input, 64, (3,3), 1, activation='relu', name='second')
-    X = MaxPooling2D((2, 2))(X)
-    X = Conv2D(128, (3,3), activation='relu')(X)
-    # X = conv2d_bn(X_input, 128, (3,3), 1, activation='relu', name='third')
-    X = MaxPooling2D((2, 2))(X)
-    X = Flatten()(X)
-    # X = Dense(128, activation='relu')(X)
 
     if with_gender:
         # Dense block (gender data)
@@ -214,47 +84,206 @@ def Simple_Conv(img_shape, with_gender=True):
     # Fully connected layer
     X = Dense(1)(X)
 
-    return tf.keras.Model(inputs=[X_input, gen_input], outputs=X, name='Simple_Conv')
+    model = tf.keras.Model(inputs=[X_input, gen_input], outputs=X, name=model_name)
+    model.compile(loss=loss, optimizer=optim, metrics=[metric])
+
+    return model
 
 
-##### VGG16 #####
-def VGG16_boneage(img_shape, with_gender=True):
+def fit_boneage(model, train_gen, train_steps, val_gen, val_steps, epochs, callbacks):
     """
-    Implementation of a simple multi-layer convolutional architecture
-
+    Train the model with given training and validation data.
+    
     Arguments:
-    img_shape -- shape of the images of the dataset
-    with_gender -- if False, gender data is not used in the model
+    model -- chosen model
+    train_gen -- training generator to fit
+    train_steps -- training steps between epochs
+    train_gen -- validation generator to fit
+    train_steps -- validation steps between epochs
+    epochs -- number of training epochs
+    callbacks -- list of callback functions called during training
+    """
+
+    start_time = time.time()
+    model_history = model.fit(train_gen, steps_per_epoch=train_steps, validation_data=val_gen, 
+                              validation_steps=val_steps, epochs=epochs, callbacks=callbacks)
+    model_time = time.time() - start_time
+
+    print('TRAINING FINISHED')
+    print('Training time: {}'.format(model_time))
+    print('Loss: {}'.format(model_history.history['loss']))
+    print('MAE in months: {}'.format(model_history.history['mae_in_months']))
+    print('Parameters: {}'.format(model.count_params()))
+
+
+def evaluate_and_predict(model_name, t_gen, weight_path, logs_path, std_boneage, mean_boneage, gender=True,
+                          plot=False, metric='mean_absolute_error', optim='adam'):
+    """
+    Evaluate the model with test data and get the predictions.
+    
+    Arguments:
+    model_name -- chosen model
+    t_gen -- test generator to evaluate
+    weight_path -- full path where the weights of the model are saved
+    logs_path -- full path where data about the training of the model is saved
+    std_boneage -- standard deviation of the bone age values used to get the predictions in months
+    mean_boneage -- mean of the bone age values used to get the predictions in months
+    gender -- if True uses the full model structure with the gender input
+    plot -- if True plot the regression
+    metric -- metric with which to compile the model
+    optim -- optimizer with which to compile the model
 
     Returns:
-    Model() instance in Keras
+    model -- created and compiled model
+    logs -- data relative to the training of the model
+    params -- number of parameters of the model
+    test_eval -- (test_loss, test_mae) data relative to the evaluation
+    r2 -- R**2 score on the test set
+    prediction -- predictions of the model on test data
+    test_gtruth_months -- bone age ground truth of test data
     """
+    # create model and load weights
+    model = create_model(model_name, IMG_SHAPE, LOSS, optim, metric, with_gender=gender)
+    model.load_weights(weight_path)
 
+    test_data, test_gtruth = next(t_gen)
+    # predict model on test data
+    prediction = std_boneage * model.predict(test_data, batch_size=BATCH_SIZE, verbose=True) + mean_boneage
+    test_gtruth_months = std_boneage * test_gtruth + mean_boneage
+    # evaluate model
+    test_eval = model.evaluate(t_gen, verbose=False, steps=1)
+
+    if plot:
+        miss = np.abs(prediction.T - test_gtruth_months)
+        # print regression
+        print('EVALUATION FINISHED\n')
+        print('Loss: {}'.format(test_eval[0]))
+        print('Mean Absolute Error (months): {}'.format(test_eval[1]))
+        print('Max Error (months): {}'.format(np.max(miss)))
+        print('Median Error (months): {}'.format(np.median(miss)))
+
+        # plot regression
+        _, ax = plt.subplots(1, 1, figsize=(6, 6))
+        ax.plot(test_gtruth_months, prediction, '.', c=COLORS[0], label='predictions')
+        ax.plot(test_gtruth_months, test_gtruth_months, '-', c=COLORS[-1], label='ground truth')
+        ax.legend()
+        ax.set_xlabel('Actual Age (months)')
+        ax.set_ylabel('Predicted Age (months)')
+        plt.show()
+
+    # load training data
+    logs = pd.read_csv(logs_path)
+    # model params
+    params = model.count_params()
+    # R**2 score
+    r2 = r2_score(test_gtruth_months, prediction)
+
+    return model, logs, params, test_eval, r2, prediction, test_gtruth_months
+
+def create_weight_ensamble(models, img_shape, loss='mean_absolute_error', optim=tf.keras.optimizers.Adam(10**-4),
+                            metric='mean_absolute_error'):
     X_input = Input(shape=img_shape)
     gen_input = Input(shape=(1,))
 
-    # VGG16 model
-    vgg16_model = VGG16(input_tensor=X_input, include_top=False, weights=None)
-    vgg16_model.trainable = True
-    vgg16_out = vgg16_model.get_layer('block5_conv3').output
+    num_models = len(models)
 
-    X = Flatten()(vgg16_out)
+    models_results = [model([X_input, gen_input], training=False) for model in models]
+    models_results = tf.concat(values=[m for m in models_results], axis=1)
 
-    if with_gender:
-        # Dense block (gender)
-        gen = Dense(32, activation='relu')(gen_input)
+    # Weighting CNN
+    X = Conv2D(2, (3,3), activation='relu')(X_input)
+    X = MaxPooling2D((2, 2))(X)
+    X = Conv2D(4, (3,3), activation='relu')(X)
+    X = MaxPooling2D((2, 2))(X)
+    X = Conv2D(8, (3,3), activation='relu')(X)
+    X = MaxPooling2D((2, 2))(X)
+    X = Conv2D(16, (3,3), activation='relu')(X)
+    X = MaxPooling2D((2, 2))(X)
+    X = Flatten()(X)
 
-        # Concatenation
-        # X = tf.concat(values=[X, gen], axis=3)
-        X = tf.concat(values=[X, gen], axis=1)
+    # Gender input
+    gen = Dense(32, activation='relu')(gen_input)
 
-    # First Dense block
-    X = Dense(1000, activation='relu')(X)
+    # Models result dense layer
+    Y = Dense(300, activation='relu')(models_results)
 
-    # Second Dense block
-    X = Dense(1000, activation='relu')(X)
+    # Concatenation of image and gender data
+    X = tf.concat(values=[X, Y, gen], axis=1)
 
-    # Fully connected layer
-    X = Dense(1)(X)
+    # Dense net
+    X = Dense(100, activation='relu')(X)
+    Weights = Dense(num_models, activation='softmax')(X)
 
-    return tf.keras.Model(inputs=[X_input, gen_input], outputs=X, name='vgg16_boneage')
+    out = tf.reduce_sum(Weights*models_results, 1, keepdims=True)   
+
+    model = tf.keras.Model(inputs=[X_input, gen_input], outputs=out, name='ensamble')
+    model.compile(loss='mean_absolute_error', optimizer=optim, metrics=[metric]) 
+
+    return model
+
+def visualize_preds(df, predictions, gtruths, indexes=None):
+    """
+    Visualize images with the repective ground truth and prediction 
+    
+    Arguments:
+    df -- dataframe containing the path for the images
+    predictions -- bone age predictions relative to each image
+    gtruths -- bone age ground truths relative to each image
+    indexes -- indexes of the images to plot
+    """
+    _, axs = plt.subplots(2, 2, figsize=(8, 9))
+    [ax.axis('off') for ax in axs.flatten()]
+
+    if not indexes:
+      indexes = np.random.randint(0, df.shape[0], size=4)
+    for i, ax in enumerate(axs.flatten()):
+      ind = indexes[i]
+      name = df.loc[ind, 'image'].split('/')[-1].split('.')[0]
+      ax.imshow(cv2.imread(df.loc[ind, 'image']))
+      gtruth = int(gtruths[ind]*100)/100
+      prediction = int(predictions[ind]*100)/100
+      ax.set_title('Image: {}\nground truth: {}\nprediction: {}'.format(name, gtruth, prediction), size=12)
+
+
+def plot_bars(values, colors, title, xlabel, ylabel, values_2=None, values_3=None, annotate=True):
+    """
+    Bar plot to visualize training and testing results 
+    
+    Arguments:
+    values -- values to plot on y-axes
+    colors -- set of colors to use for the bars
+    title -- title of the plot
+    xlabel -- label of the x-axis
+    ylabel -- label of the y-axis
+    values_2 -- additional value to plot in adiacent bar
+    values_3 -- second addition value to plot in adiacent bar
+    annotate -- if True write values in the plot
+    """
+    x_pos = np.arange(len(MODELS))
+    
+    if values_3:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        # plot data in grouped manner of bar type
+        plt.bar(x_pos-0.3, values, 0.2, color=colors[0])
+        plt.bar(x_pos, values_2, 0.2, color=colors[int(len(colors)/2)])
+        plt.bar(x_pos+0.3, values_3, 0.2, color=colors[-1])
+        plt.legend(['train', 'validation', 'test'])
+    elif values_2:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        # plot data in grouped manner of bar type
+        plt.bar(x_pos-0.2, values, 0.4, color=colors[1])
+        plt.bar(x_pos+0.2, values_2, 0.4, color=colors[3])
+        plt.legend(['train', 'validation'])
+    else:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        plt.bar(x_pos, values, color=colors)
+        if annotate:
+            for i in range(len(MODELS)):
+                plt.annotate(int(values[i]*1000)/1000, (x_pos[i], values[i]), ha='center', va='center',
+                             size=10, xytext=(0,5), textcoords='offset points')
+
+    plt.xticks(x_pos, MODELS)
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.show()
